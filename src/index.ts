@@ -385,12 +385,19 @@ class OracleMCPServer {
       import('./db/index.ts'),
     ]);
 
-    this.vectorStore = createVectorStore({
-      type: 'lancedb',
-      collectionName: 'oracle_knowledge_bge_m3',
-      embeddingProvider: 'ollama',
-      embeddingModel: 'bge-m3',
-    });
+    // Let ORACLE_VECTOR_DB choose the backend. Default stays 'lancedb' so
+    // existing installs are unchanged; other backends (e.g. 'chroma', which
+    // embeds internally and uses COLLECTION_NAME) are reached via the factory's
+    // env logic instead of being overridden by a hardcoded config.
+    const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
+    this.vectorStore = vectorType === 'lancedb'
+      ? createVectorStore({
+          type: 'lancedb',
+          collectionName: 'oracle_knowledge_bge_m3',
+          embeddingProvider: 'ollama',
+          embeddingModel: 'bge-m3',
+        })
+      : createVectorStore();
 
     const { sqlite, db } = createDatabase(DB_PATH);
     this.sqlite = sqlite;
