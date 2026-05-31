@@ -273,8 +273,15 @@ export async function handleLearn(ctx: ToolContext, input: OracleLearnInput): Pr
     }
   } else {
     try {
+      // Match initEmbedded's backend selection. The model registry
+      // (getVectorStoreByModel) is lancedb+ollama only; on backends chosen via
+      // ORACLE_VECTOR_DB (e.g. chroma, which embeds internally) reuse the
+      // server's already-connected vectorStore so inline embed doesn't fail.
       const model = process.env.ORACLE_EMBEDDING_MODEL || 'bge-m3';
-      const vectorStore = getVectorStoreByModel(model);
+      const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
+      const vectorStore = vectorType === 'lancedb'
+        ? getVectorStoreByModel(model)
+        : ctx.vectorStore;
       await vectorStore.addDocuments([{
         id,
         document: frontmatter,
