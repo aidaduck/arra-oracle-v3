@@ -183,13 +183,20 @@ export function getVectorStoreByModel(model?: string): VectorStoreAdapter {
   let store = modelStoreCache.get(key);
   if (!store) {
     const preset = models[key];
-    store = createVectorStore({
-      type: 'lancedb',
-      collectionName: preset.collection,
-      embeddingProvider: 'ollama',
-      embeddingModel: preset.model,
-      ...(preset.dataPath && { dataPath: preset.dataPath }),
-    });
+    // Bug #3 fix: respect ORACLE_VECTOR_DB. Default stays 'lancedb' (no regress
+    // for arm64/linux dual-index). For chroma/other backends the model registry
+    // (per-model lancedb+ollama collections) doesn't apply — a single env-driven
+    // store (chroma → oracle_knowledge, internal ONNX) serves all models.
+    const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
+    store = vectorType === 'lancedb'
+      ? createVectorStore({
+          type: 'lancedb',
+          collectionName: preset.collection,
+          embeddingProvider: 'ollama',
+          embeddingModel: preset.model,
+          ...(preset.dataPath && { dataPath: preset.dataPath }),
+        })
+      : createVectorStore();
     modelStoreCache.set(key, store);
     // Auto-connect in background (non-blocking)
     connectPromises.set(key, store.connect().catch(e =>
