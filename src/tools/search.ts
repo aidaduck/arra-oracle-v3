@@ -64,6 +64,11 @@ export const searchToolDef = {
         type: 'string',
         enum: ['nomic', 'qwen3', 'bge-m3'],
         description: 'Embedding model: bge-m3 (default, multilingual Thai↔EN, 1024-dim), nomic (fast, 768-dim), or qwen3 (cross-language, 4096-dim)',
+      },
+      include_superseded: {
+        type: 'boolean',
+        description: 'Include superseded documents in results (default: false). By default, superseded records are excluded.',
+        default: false,
       }
     },
     required: ['query']
@@ -322,7 +327,7 @@ export function combineResults(
 
 export async function handleSearch(ctx: ToolContext, input: OracleSearchInput): Promise<ToolResponse> {
   const startTime = Date.now();
-  const { query, type = 'all', limit = 5, offset = 0, mode = 'hybrid', project, cwd, model } = input;
+  const { query, type = 'all', limit = 5, offset = 0, mode = 'hybrid', project, cwd, model, include_superseded = false } = input;
 
   if (!query || query.trim().length === 0) {
     throw new Error('Query cannot be empty');
@@ -340,6 +345,9 @@ export async function handleSearch(ctx: ToolContext, input: OracleSearchInput): 
     : '';
   const projectParams = resolvedProject ? [resolvedProject] : [];
 
+  // Supersede filter: exclude superseded records by default
+  const supersedeFilter = include_superseded ? '' : 'AND d.superseded_by IS NULL';
+
   let warning: string | undefined;
   let vectorSearchError = false;
 
@@ -351,7 +359,7 @@ export async function handleSearch(ctx: ToolContext, input: OracleSearchInput): 
         SELECT f.id, f.content, d.type, d.source_file, d.concepts, rank
         FROM oracle_fts f
         JOIN oracle_documents d ON f.id = d.id
-        WHERE oracle_fts MATCH ? ${projectFilter}
+        WHERE oracle_fts MATCH ? ${projectFilter} ${supersedeFilter}
         ORDER BY rank
         LIMIT ?
       `);
@@ -361,7 +369,7 @@ export async function handleSearch(ctx: ToolContext, input: OracleSearchInput): 
         SELECT f.id, f.content, d.type, d.source_file, d.concepts, rank
         FROM oracle_fts f
         JOIN oracle_documents d ON f.id = d.id
-        WHERE oracle_fts MATCH ? AND d.type = ? ${projectFilter}
+        WHERE oracle_fts MATCH ? AND d.type = ? ${projectFilter} ${supersedeFilter}
         ORDER BY rank
         LIMIT ?
       `);
@@ -403,7 +411,26 @@ export async function handleSearch(ctx: ToolContext, input: OracleSearchInput): 
     score: 1 - (result.score || 0),
   }));
 
-  const combinedResults = combineResults(ftsResults, normalizedVectorResults);
+  let combinedResults = combineResults(ftsResults, normalizedVectorResults);
+
+  // Filter superseded records from vector/hybrid results (FTS already filtered at SQL level)
+  if (!include_superseded && combinedResults.length > 0) {
+    const vectorIds = combinedResults
+      .filter(r => r.source !== 'fts')
+      .map(r => r.id);
+    if (vectorIds.length > 0) {
+      const placeholders = vectorIds.map(() => '?').join(',');
+      const supersededIds = new Set<string>(
+        (ctx.sqlite.prepare(`
+          SELECT id FROM oracle_documents
+          WHERE id IN (${placeholders}) AND superseded_by IS NOT NULL
+        `).all(...vectorIds) as Array<{ id: string }>).map(r => r.id)
+      );
+      if (supersededIds.size > 0) {
+        combinedResults = combinedResults.filter(r => !supersededIds.has(r.id));
+      }
+    }
+  }
 
   // Reranker pass — cross-encoder over the top of the hybrid list.
   // No-op when ORACLE_RERANKER_URL is unset (the helper pass-throughs).

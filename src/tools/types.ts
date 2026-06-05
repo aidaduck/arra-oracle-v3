@@ -38,6 +38,7 @@ export interface OracleSearchInput {
   project?: string;
   cwd?: string;
   model?: 'nomic' | 'qwen3' | 'bge-m3';
+  include_superseded?: boolean;
 }
 
 export interface OracleReflectInput {}
