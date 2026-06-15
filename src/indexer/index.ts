@@ -26,6 +26,8 @@ import { backupDatabase } from './backup.ts';
 import { parseResonanceFile, parseLearningFile, parseRetroFile, parseDistillationFile } from './parser.ts';
 import { collectDocuments, collectSecurityCorpus } from './collectors.ts';
 import { storeDocuments } from './storage.ts';
+import { createVectorStore } from '../vector/factory.ts';
+import type { VectorStoreAdapter } from '../vector/types.ts';
 
 export class OracleIndexer {
   private sqlite: Database;
@@ -33,6 +35,7 @@ export class OracleIndexer {
   private config: IndexerConfig;
   private project: string | null;
   private seenContentHashes: Set<string> = new Set();
+  private vectorClient: VectorStoreAdapter | null = null;
 
   constructor(config: IndexerConfig) {
     this.config = config;
@@ -127,13 +130,30 @@ export class OracleIndexer {
       }
     }
 
-    // Store in SQLite + FTS5 only. Vector indexing is a separate step
-    // (src/scripts/index-model.ts) that uses the canonical LanceDB path.
-    await storeDocuments(this.sqlite, this.db, null, this.project, documents);
+    // Connect vector store if ORACLE_VECTOR_DB=chroma. Default stays
+    // SQLite-only (null) to avoid regressing existing installs that don't
+    // have ChromaDB running.
+    const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
+    if (vectorType === 'chroma') {
+      this.vectorClient = createVectorStore();
+      await this.vectorClient.connect();
+      await this.vectorClient.ensureCollection();
+      console.log(`[Indexer] Vector client: ${this.vectorClient.name}`);
+    } else {
+      this.vectorClient = null;
+    }
+
+    try {
+      await storeDocuments(this.sqlite, this.db, this.vectorClient, this.project, documents);
+    } finally {
+      if (this.vectorClient) {
+        await this.vectorClient.close();
+        this.vectorClient = null;
+      }
+    }
 
     setIndexingStatus(this.sqlite, this.config, false, documents.length, documents.length);
-    console.log(`Indexed ${documents.length} documents (SQLite + FTS5)`);
-    console.log('Run `bun src/scripts/index-model.ts bge-m3` to populate vector embeddings.');
+    console.log(`Indexed ${documents.length} documents (SQLite + FTS5)` + (vectorType === 'chroma' ? ' + Chroma' : ''));
     console.log('Indexing complete!');
   }
 

@@ -218,12 +218,29 @@ export class ChromaMcpClient {
       throw new Error('Chroma client not initialized');
     }
 
+    const ids = documents.map(d => d.id);
+
+    // Delete-then-add for upsert behavior: chroma_add_documents rejects
+    // duplicate IDs, so we delete existing ones first (non-existent IDs
+    // are silently ignored by ChromaDB).
+    try {
+      await this.client.callTool({
+        name: 'chroma_delete_documents',
+        arguments: {
+          collection_name: this.collectionName,
+          ids
+        }
+      });
+    } catch (error) {
+      console.warn('[ChromaMCP] delete before add failed (may not exist):', error instanceof Error ? error.message : String(error));
+    }
+
     await this.client.callTool({
       name: 'chroma_add_documents',
       arguments: {
         collection_name: this.collectionName,
         documents: documents.map(d => d.document),
-        ids: documents.map(d => d.id),
+        ids,
         metadatas: documents.map(d => d.metadata)
       }
     });
