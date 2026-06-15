@@ -166,7 +166,17 @@ export async function handleLearn(ctx: ToolContext, input: OracleLearnInput): Pr
   const now = new Date();
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  const slug = pattern
+  // Derive a clean title from the first meaningful line. Strip a leading markdown
+  // header (#), frontmatter key (title:), and skip "---" fences so a pasted
+  // "# Title" / "title: X" / "---" block doesn't leak into the title field or slug
+  // and produce malformed nodes (double-frontmatter, "# #", "title: title:").
+  // arra-oracle bug discovered 2026-06-15 (Arizus/Librarian/Myst all hit it).
+  const cleanTitle = (pattern.split('\n').find(l => l.trim() && !/^---+$/.test(l.trim())) || pattern)
+    .replace(/^#+\s*/, '')
+    .replace(/^title:\s*/i, '')
+    .trim();
+
+  const slug = cleanTitle
     .substring(0, 50)
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
@@ -208,7 +218,7 @@ export async function handleLearn(ctx: ToolContext, input: OracleLearnInput): Pr
     throw new Error(`File already exists: ${filename}`);
   }
 
-  const title = pattern.split('\n')[0].substring(0, 80);
+  const title = cleanTitle.substring(0, 80);
   const conceptsList = coerceConcepts(concepts);
   const frontmatter = [
     '---',
