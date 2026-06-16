@@ -61,4 +61,4 @@ export interface EmbeddingProvider {
 }
 
 export type VectorDBType = 'chroma' | 'sqlite-vec' | 'lancedb' | 'qdrant' | 'cloudflare-vectorize';
-export type EmbeddingProviderType = 'chromadb-internal' | 'ollama' | 'openai' | 'cloudflare-ai';
+export type EmbeddingProviderType = 'chromadb-internal' | 'ollama' | 'openai' | 'cloudflare-ai' | 'gemini';

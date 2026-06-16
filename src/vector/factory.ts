@@ -132,7 +132,17 @@ export function createVectorStore(config: VectorStoreConfig = {}): VectorStoreAd
 // Model-based registry for dual-index search
 // ============================================================================
 
-export function getEmbeddingModels(): Record<string, { collection: string; model: string; dataPath?: string }> {
+export interface EmbeddingModelPreset {
+  collection: string;
+  model: string;
+  dataPath?: string;
+  /** Vector backend for this model. Defaults to 'lancedb' if unset. */
+  adapter?: VectorDBType;
+  /** Embedding provider for this model. Defaults to 'ollama' if unset. */
+  provider?: EmbeddingProviderType;
+}
+
+export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
   // If vector-server.json exists, use it as source of truth (#1071 phase 2)
   const cfg = loadVectorConfig();
   if (cfg) return configToModels(cfg);
@@ -154,17 +164,28 @@ export function getEmbeddingModels(): Record<string, { collection: string; model
       model: 'bge-m3',
       dataPath: LANCEDB_DIR,
     },
+    // Cloud embedder for hosts where local Ollama isn't available (e.g. older
+    // macOS). sqlite-vec backend avoids lancedb native-binding / chroma uvx
+    // issues. Needs GEMINI_API_KEY + a system SQLite that allows extension
+    // loading (auto-probed via ORACLE_SQLITE_LIB / Homebrew).
+    gemini: {
+      collection: 'oracle_knowledge_gemini',
+      model: 'gemini-embedding-2',
+      dataPath: VECTORS_DB_PATH,
+      adapter: 'sqlite-vec',
+      provider: 'gemini',
+    },
   };
 }
 
 /** @deprecated Use getEmbeddingModels() — kept for backward compat */
-export const EMBEDDING_MODELS = new Proxy({} as Record<string, { collection: string; model: string; dataPath?: string }>, {
-  get(_, prop: string) { return getEmbeddingModels()[prop]; },
-  has(_, prop: string) { return prop in getEmbeddingModels(); },
+export const EMBEDDING_MODELS = new Proxy({} as Record<string, EmbeddingModelPreset>, {
+  get(_, prop: string) { return getEmbeddingModels()[prop as string]; },
+  has(_, prop: string) { return (prop as string) in getEmbeddingModels(); },
   ownKeys() { return Object.keys(getEmbeddingModels()); },
   getOwnPropertyDescriptor(_, prop: string) {
     const models = getEmbeddingModels();
-    if (prop in models) return { configurable: true, enumerable: true, value: models[prop] };
+    if ((prop as string) in models) return { configurable: true, enumerable: true, value: models[prop as string] };
     return undefined;
   },
 });
@@ -187,12 +208,14 @@ export function getVectorStoreByModel(model?: string): VectorStoreAdapter {
     // for arm64/linux dual-index). For chroma/other backends the model registry
     // (per-model lancedb+ollama collections) doesn't apply — a single env-driven
     // store (chroma → oracle_knowledge, internal ONNX) serves all models.
-    const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
-    store = vectorType === 'lancedb'
+    // Preset can pin its own adapter/provider (e.g. gemini → sqlite-vec+gemini).
+    // Otherwise respect ORACLE_VECTOR_DB, defaulting to lancedb+ollama.
+    const vectorType = preset.adapter || process.env.ORACLE_VECTOR_DB || 'lancedb';
+    store = (vectorType === 'lancedb' || preset.adapter)
       ? createVectorStore({
-          type: 'lancedb',
+          type: vectorType as VectorDBType,
           collectionName: preset.collection,
-          embeddingProvider: 'ollama',
+          embeddingProvider: preset.provider || 'ollama',
           embeddingModel: preset.model,
           ...(preset.dataPath && { dataPath: preset.dataPath }),
         })

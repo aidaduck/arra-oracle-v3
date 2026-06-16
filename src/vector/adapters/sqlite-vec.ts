@@ -43,6 +43,17 @@ export class SqliteVecAdapter implements VectorStoreAdapter {
   async connect(): Promise<void> {
     if (this.db) return;
 
+    // Bun's bundled SQLite disables dynamic extension loading. Point to a
+    // system SQLite that allows it (e.g. Homebrew) so vec0.dylib can load.
+    // Override path via ORACLE_SQLITE_LIB; otherwise probe known Homebrew dirs.
+    const customLib = process.env.ORACLE_SQLITE_LIB
+      || ['/usr/local/opt/sqlite/lib/libsqlite3.dylib',
+          '/opt/homebrew/opt/sqlite/lib/libsqlite3.dylib']
+          .find(p => { try { return require('fs').existsSync(p); } catch { return false; } });
+    if (customLib) {
+      try { Database.setCustomSQLite(customLib); } catch { /* already set / unsupported */ }
+    }
+
     this.db = new Database(this.dbPath);
 
     // Load sqlite-vec extension — try npm package first, then system paths

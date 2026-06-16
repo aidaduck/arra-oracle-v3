@@ -155,6 +155,51 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
 }
 
 /**
+ * Gemini embeddings via Google AI API.
+ * gemini-embedding-2 → 3072 dims. Set GEMINI_API_KEY.
+ */
+export class GeminiEmbeddings implements EmbeddingProvider {
+  readonly name = 'gemini';
+  readonly dimensions = 3072; // gemini-embedding-2 default
+  private apiKey: string;
+  private model: string;
+
+  constructor(config: { apiKey?: string; model?: string } = {}) {
+    this.apiKey = config.apiKey || process.env.GEMINI_API_KEY || '';
+    this.model = config.model || 'gemini-embedding-2';
+
+    if (!this.apiKey) {
+      throw new Error('Gemini API key required. Set GEMINI_API_KEY.');
+    }
+  }
+
+  async embed(texts: string[], _type?: EmbedType): Promise<number[][]> {
+    const embeddings: number[][] = [];
+
+    for (const text of texts) {
+      const truncated = text.length > 2000 ? text.slice(0, 2000) : text;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:embedContent?key=${this.apiKey}`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: { parts: [{ text: truncated }] } }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Gemini API error: ${error}`);
+      }
+
+      const data = await response.json() as { embedding: { values: number[] } };
+      embeddings.push(data.embedding.values);
+    }
+
+    return embeddings;
+  }
+}
+
+/**
  * Create embedding provider from type string
  */
 export function createEmbeddingProvider(
@@ -166,6 +211,8 @@ export function createEmbeddingProvider(
       return new OllamaEmbeddings({ model });
     case 'openai':
       return new OpenAIEmbeddings({ model });
+    case 'gemini':
+      return new GeminiEmbeddings({ model });
     case 'cloudflare-ai': {
       // Dynamic import to avoid requiring CF credentials when not used
       const { CloudflareAIEmbeddings } = require('./adapters/cloudflare-vectorize.ts');

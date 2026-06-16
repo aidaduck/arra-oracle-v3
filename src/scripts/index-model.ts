@@ -40,9 +40,9 @@ async function main() {
   console.log(`Documents: ${docCount}`);
 
   const store = createVectorStore({
-    type: 'lancedb',
+    type: preset.adapter || 'lancedb',
     collectionName: preset.collection,
-    embeddingProvider: 'ollama',
+    embeddingProvider: preset.provider || 'ollama',
     embeddingModel: preset.model,
     ...(preset.dataPath && { dataPath: preset.dataPath }),
   });
