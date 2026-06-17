@@ -156,17 +156,23 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
 
 /**
  * Gemini embeddings via Google AI API.
- * gemini-embedding-2 → 3072 dims. Set GEMINI_API_KEY.
+ *
+ * gemini-embedding-2 supports Matryoshka (MRL): outputDimensionality can be
+ * truncated from 3072 → 768 with near-identical quality but 4x less storage.
+ * Default 768 (override via ORACLE_EMBEDDING_DIMS). Set GEMINI_API_KEY.
  */
 export class GeminiEmbeddings implements EmbeddingProvider {
   readonly name = 'gemini';
-  readonly dimensions = 3072; // gemini-embedding-2 default
+  readonly dimensions: number;
   private apiKey: string;
   private model: string;
 
-  constructor(config: { apiKey?: string; model?: string } = {}) {
+  constructor(config: { apiKey?: string; model?: string; dimensions?: number } = {}) {
     this.apiKey = config.apiKey || process.env.GEMINI_API_KEY || '';
     this.model = config.model || 'gemini-embedding-2';
+    this.dimensions = config.dimensions
+      || (process.env.ORACLE_EMBEDDING_DIMS ? parseInt(process.env.ORACLE_EMBEDDING_DIMS, 10) : 0)
+      || 768;
 
     if (!this.apiKey) {
       throw new Error('Gemini API key required. Set GEMINI_API_KEY.');
@@ -183,7 +189,10 @@ export class GeminiEmbeddings implements EmbeddingProvider {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: { parts: [{ text: truncated }] } }),
+        body: JSON.stringify({
+          content: { parts: [{ text: truncated }] },
+          outputDimensionality: this.dimensions,
+        }),
       });
 
       if (!response.ok) {
@@ -192,7 +201,15 @@ export class GeminiEmbeddings implements EmbeddingProvider {
       }
 
       const data = await response.json() as { embedding: { values: number[] } };
-      embeddings.push(data.embedding.values);
+      // MRL truncation (<3072) returns un-normalized vectors. Normalize to unit
+      // length so cosine/dot-product distance stays correct across backends.
+      const vec = data.embedding.values;
+      if (this.dimensions < 3072) {
+        const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
+        embeddings.push(vec.map(v => v / norm));
+      } else {
+        embeddings.push(vec);
+      }
     }
 
     return embeddings;
