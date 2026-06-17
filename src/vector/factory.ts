@@ -140,6 +140,10 @@ export interface EmbeddingModelPreset {
   adapter?: VectorDBType;
   /** Embedding provider for this model. Defaults to 'ollama' if unset. */
   provider?: EmbeddingProviderType;
+  /** Only embed docs whose source_file contains this substring (collection scoping). */
+  sourceInclude?: string;
+  /** Skip docs whose source_file contains this substring (privacy / hands-off scoping). */
+  sourceExclude?: string;
 }
 
 export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
@@ -174,6 +178,19 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
       provider: 'gemini',
+      // Fleet-wide knowledge only. MercyX is human-managed (Noctéa) and stays
+      // in its own collection — exclude it from the shared fleet store.
+      sourceExclude: '/mercyx-oracle/',
+    },
+    // MercyX knowledge in its own collection (hands-off separation). Same
+    // embedder/backend; searched independently from the fleet collection.
+    'gemini-mercyx': {
+      collection: 'oracle_knowledge_mercyx',
+      model: 'gemini-embedding-2',
+      dataPath: VECTORS_DB_PATH,
+      adapter: 'sqlite-vec',
+      provider: 'gemini',
+      sourceInclude: '/mercyx-oracle/',
     },
   };
 }

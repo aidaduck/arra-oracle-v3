@@ -90,8 +90,16 @@ async function main() {
     ORDER BY d.created_at DESC
   `).all() as Array<{ id: string; type: string; content: string; source_file: string; concepts: string; project: string | null }>;
 
+  // Collection scoping by source path (e.g. keep MercyX in its own collection)
+  let scoped = rows;
+  if (preset.sourceInclude) scoped = scoped.filter(r => r.source_file.includes(preset.sourceInclude!));
+  if (preset.sourceExclude) scoped = scoped.filter(r => !r.source_file.includes(preset.sourceExclude!));
+  if (scoped.length !== rows.length) {
+    console.log(`Scope: ${rows.length} → ${scoped.length} docs (include=${preset.sourceInclude || '-'} exclude=${preset.sourceExclude || '-'})`);
+  }
+
   // Diff
-  let todo = rows.filter(r => {
+  let todo = scoped.filter(r => {
     const h = hash(r.content);
     const prev = existing.get(r.id);
     return prev === undefined || prev !== h;
@@ -99,8 +107,8 @@ async function main() {
 
   const pending = todo.length;
   if (MAX > 0 && todo.length > MAX) todo = todo.slice(0, MAX); // cap per run ("ทีละนิด")
-  const skipped = rows.length - pending;
-  console.log(`Source: ${rows.length} docs | already current: ${skipped} | pending: ${pending} | this run: ${todo.length}${MAX > 0 ? ` (capped at ${MAX})` : ''}`);
+  const skipped = scoped.length - pending;
+  console.log(`In scope: ${scoped.length} docs | already current: ${skipped} | pending: ${pending} | this run: ${todo.length}${MAX > 0 ? ` (capped at ${MAX})` : ''}`);
   if (todo.length === 0) { console.log('✅ Nothing to embed — up to date.'); await store.close(); sqlite.close(); return; }
 
   let done = 0, errors = 0;
