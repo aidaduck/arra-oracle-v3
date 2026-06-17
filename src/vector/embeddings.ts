@@ -181,19 +181,31 @@ export class GeminiEmbeddings implements EmbeddingProvider {
 
   async embed(texts: string[], _type?: EmbedType): Promise<number[][]> {
     const embeddings: number[][] = [];
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
     for (const text of texts) {
       const truncated = text.length > 2000 ? text.slice(0, 2000) : text;
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:embedContent?key=${this.apiKey}`;
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: { parts: [{ text: truncated }] },
-          outputDimensionality: this.dimensions,
-        }),
-      });
+      let response: Response;
+      // Free tier caps embedContent at ~100 req/min. On 429 RESOURCE_EXHAUSTED
+      // the API tells us when to retry ("retry in Xs") — honor it and self-pace
+      // instead of failing the batch. Bounded retries to avoid hanging forever.
+      for (let attempt = 0; ; attempt++) {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content: { parts: [{ text: truncated }] },
+            outputDimensionality: this.dimensions,
+          }),
+        });
+        if (response.status !== 429 || attempt >= 6) break;
+        const body = await response.text();
+        const m = body.match(/retry in ([\d.]+)s/i);
+        const waitMs = Math.ceil((m ? parseFloat(m[1]) : 30) * 1000) + 1000;
+        await sleep(waitMs);
+      }
 
       if (!response.ok) {
         const error = await response.text();
