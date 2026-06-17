@@ -79,16 +79,44 @@ async function main() {
     existing.clear();
   }
 
-  // Source docs from oracle.db (FTS join for full content). Raw Database —
-  // opened AFTER store.connect() so setCustomSQLite has already run.
-  const sqlite = new Database(DB_PATH, { readonly: true });
-  const rows = sqlite.prepare(`
-    SELECT d.id, d.type, GROUP_CONCAT(f.content, '\n') AS content, d.source_file, d.concepts, d.project
-    FROM oracle_documents d
-    JOIN oracle_fts f ON d.id = f.id
-    GROUP BY d.id
-    ORDER BY d.created_at DESC
-  `).all() as Array<{ id: string; type: string; content: string; source_file: string; concepts: string; project: string | null }>;
+  // Source docs from either a filesystem folder (preset.sourceDir — e.g. a
+  // standalone lab vault not under the indexer) or oracle.db (FTS join).
+  type Row = { id: string; type: string; content: string; source_file: string; concepts: string; project: string | null };
+  let rows: Row[];
+  let sqlite: Database | null = null;
+
+  if (preset.sourceDir) {
+    const root = preset.sourceDir.replace(/^~/, process.env.HOME || '');
+    const { readdirSync, readFileSync, statSync } = await import('fs');
+    const { join, relative } = await import('path');
+    const walk = (dir: string): string[] => readdirSync(dir).flatMap(name => {
+      if (name.startsWith('.')) return [];
+      const p = join(dir, name);
+      return statSync(p).isDirectory() ? walk(p) : (p.endsWith('.md') ? [p] : []);
+    });
+    rows = walk(root).map(p => {
+      const rel = relative(root, p);
+      return {
+        id: `lyzlab_${rel}`,                    // stable id from path → resumable
+        type: rel.split('/')[0].toLowerCase(),  // top folder = type (signals/knowledge-core)
+        content: readFileSync(p, 'utf-8'),
+        source_file: `LYz-Lab/${rel}`,
+        concepts: '',
+        project: 'lyz-lab',
+      };
+    });
+    console.log(`Filesystem source: ${root} → ${rows.length} .md files`);
+  } else {
+    // oracle.db — raw Database opened AFTER store.connect() (setCustomSQLite ran)
+    sqlite = new Database(DB_PATH, { readonly: true });
+    rows = sqlite.prepare(`
+      SELECT d.id, d.type, GROUP_CONCAT(f.content, '\n') AS content, d.source_file, d.concepts, d.project
+      FROM oracle_documents d
+      JOIN oracle_fts f ON d.id = f.id
+      GROUP BY d.id
+      ORDER BY d.created_at DESC
+    `).all() as Row[];
+  }
 
   // Collection scoping by source path (e.g. keep MercyX in its own collection)
   let scoped = rows;
@@ -109,7 +137,7 @@ async function main() {
   if (MAX > 0 && todo.length > MAX) todo = todo.slice(0, MAX); // cap per run ("ทีละนิด")
   const skipped = scoped.length - pending;
   console.log(`In scope: ${scoped.length} docs | already current: ${skipped} | pending: ${pending} | this run: ${todo.length}${MAX > 0 ? ` (capped at ${MAX})` : ''}`);
-  if (todo.length === 0) { console.log('✅ Nothing to embed — up to date.'); await store.close(); sqlite.close(); return; }
+  if (todo.length === 0) { console.log('✅ Nothing to embed — up to date.'); await store.close(); sqlite?.close(); return; }
 
   let done = 0, errors = 0;
   const start = Date.now();
@@ -141,7 +169,7 @@ async function main() {
   const stats = await store.getStats();
   console.log(`\n=== Done === embedded ${done}, errors ${errors}, collection total ${stats.count}`);
   await store.close();
-  sqlite.close();
+  sqlite?.close();
 }
 
 main().catch(e => { console.error('Incremental indexer failed:', e); process.exit(1); });

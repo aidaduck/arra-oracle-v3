@@ -144,6 +144,9 @@ export interface EmbeddingModelPreset {
   sourceInclude?: string;
   /** Skip docs whose source_file contains this substring (privacy / hands-off scoping). */
   sourceExclude?: string;
+  /** Read *.md from this filesystem dir instead of oracle.db (standalone vaults
+   *  not under the indexer, e.g. ~/Desktop/LYz-Lab). Supports leading ~. */
+  sourceDir?: string;
 }
 
 export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
@@ -191,6 +194,16 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
       adapter: 'sqlite-vec',
       provider: 'gemini',
       sourceInclude: '/mercyx-oracle/',
+    },
+    // Same lyzlab collection, but sourced from the standalone LYz-Lab vault
+    // folder (Signals/knowledge-core) that lives outside the indexer.
+    'lyz-lab-folder': {
+      collection: 'oracle_knowledge_lyzlab',
+      model: 'gemini-embedding-2',
+      dataPath: VECTORS_DB_PATH,
+      adapter: 'sqlite-vec',
+      provider: 'gemini',
+      sourceDir: '~/Desktop/LYz-Lab',
     },
   };
 }
