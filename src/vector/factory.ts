@@ -172,20 +172,20 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
     // macOS). sqlite-vec backend avoids lancedb native-binding / chroma uvx
     // issues. Needs GEMINI_API_KEY + a system SQLite that allows extension
     // loading (auto-probed via ORACLE_SQLITE_LIB / Homebrew).
-    gemini: {
-      collection: 'oracle_knowledge_gemini',
+    // Umbra = shared fleet knowledge (from the Umbra vault). MercyX is human-
+    // managed (Noctéa) and lives in its own LYz-Lab collection — excluded here.
+    umbra: {
+      collection: 'oracle_knowledge_umbra',
       model: 'gemini-embedding-2',
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
       provider: 'gemini',
-      // Fleet-wide knowledge only. MercyX is human-managed (Noctéa) and stays
-      // in its own collection — exclude it from the shared fleet store.
       sourceExclude: '/mercyx-oracle/',
     },
-    // MercyX knowledge in its own collection (hands-off separation). Same
-    // embedder/backend; searched independently from the fleet collection.
-    'gemini-mercyx': {
-      collection: 'oracle_knowledge_mercyx',
+    // LYz-Lab = the workspace MercyX manages (~/Desktop/LYz-Lab). Its knowledge
+    // (mercyx-oracle/ψ) gets its own collection, hands-off from the fleet.
+    'lyz-lab': {
+      collection: 'oracle_knowledge_lyzlab',
       model: 'gemini-embedding-2',
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
