@@ -169,7 +169,9 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
     'bge-m3': {
       collection: 'oracle_knowledge_bge_m3',
       model: 'bge-m3',
-      dataPath: LANCEDB_DIR,
+      dataPath: VECTORS_DB_PATH,
+      adapter: 'sqlite-vec',
+      provider: 'ollama',
     },
     // Cloud embedder for hosts where local Ollama isn't available (e.g. older
     // macOS). sqlite-vec backend avoids lancedb native-binding / chroma uvx

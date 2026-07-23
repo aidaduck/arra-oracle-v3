@@ -26,7 +26,8 @@ import { backupDatabase } from './backup.ts';
 import { parseResonanceFile, parseLearningFile, parseRetroFile, parseDistillationFile } from './parser.ts';
 import { collectDocuments, collectSecurityCorpus } from './collectors.ts';
 import { storeDocuments } from './storage.ts';
-import { createVectorStore } from '../vector/factory.ts';
+import { createVectorStore, getEmbeddingModels } from '../vector/factory.ts';
+import { COLLECTION_NAME } from '../const.ts';
 import type { VectorStoreAdapter } from '../vector/types.ts';
 
 export class OracleIndexer {
@@ -130,15 +131,21 @@ export class OracleIndexer {
       }
     }
 
-    // Connect vector store if ORACLE_VECTOR_DB=chroma. Default stays
-    // SQLite-only (null) to avoid regressing existing installs that don't
-    // have ChromaDB running.
+    // Connect vector store for supported backends. Default stays SQLite-only
+    // (null) to avoid regressing existing installs that don't have a store.
+    // Collection name is resolved from the model registry (getEmbeddingModels())
+    // rather than hardcoded per-provider, so any preset (bge-m3, umbra, etc.)
+    // writes to its own collection automatically.
     const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
-    if (vectorType === 'chroma') {
-      this.vectorClient = createVectorStore();
+    const modelName = process.env.ORACLE_EMBEDDING_MODEL
+      || (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+    if (vectorType === 'chroma' || vectorType === 'sqlite-vec') {
+      const preset = getEmbeddingModels()[modelName];
+      const collectionName = preset?.collection || COLLECTION_NAME;
+      this.vectorClient = createVectorStore({ collectionName });
       await this.vectorClient.connect();
       await this.vectorClient.ensureCollection();
-      console.log(`[Indexer] Vector client: ${this.vectorClient.name}`);
+      console.log(`[Indexer] Vector client: ${this.vectorClient.name} → ${collectionName}`);
     } else {
       this.vectorClient = null;
     }
@@ -153,7 +160,7 @@ export class OracleIndexer {
     }
 
     setIndexingStatus(this.sqlite, this.config, false, documents.length, documents.length);
-    console.log(`Indexed ${documents.length} documents (SQLite + FTS5)` + (vectorType === 'chroma' ? ' + Chroma' : ''));
+    console.log(`Indexed ${documents.length} documents (SQLite + FTS5)` + (vectorType === 'chroma' ? ' + Chroma' : vectorType === 'sqlite-vec' ? ` + ${modelName}` : ''));
     console.log('Indexing complete!');
   }
 

@@ -20,7 +20,7 @@ import path from 'path';
 import fs from 'fs';
 import { loadToolGroupConfig, getDisabledTools, watchToolGroupConfig, type ToolGroupConfig } from './config/tool-groups.ts';
 import { ORACLE_DATA_DIR, DB_PATH, REPO_ROOT } from './config.ts';
-import { MCP_SERVER_NAME } from './const.ts';
+import { MCP_SERVER_NAME, COLLECTION_NAME } from './const.ts';
 
 // Tool handlers (all extracted to src/tools/)
 import type { ToolContext, ToolResponse } from './tools/types.ts';
@@ -380,7 +380,7 @@ class OracleMCPServer {
   private async initEmbedded(): Promise<void> {
     if (this.sqlite && this.db && this.vectorStore) return;
 
-    const [{ createVectorStore }, { createDatabase }] = await Promise.all([
+    const [{ createVectorStore, getEmbeddingModels }, { createDatabase }] = await Promise.all([
       import('./vector/factory.ts'),
       import('./db/index.ts'),
     ]);
@@ -389,15 +389,21 @@ class OracleMCPServer {
     // existing installs are unchanged; other backends (e.g. 'chroma', which
     // embeds internally and uses COLLECTION_NAME) are reached via the factory's
     // env logic instead of being overridden by a hardcoded config.
+    // Collection name is resolved from the model registry (getEmbeddingModels())
+    // instead of a hardcoded/provider-ternary name, so any preset works here.
     const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
-    this.vectorStore = vectorType === 'lancedb'
-      ? createVectorStore({
-          type: 'lancedb',
-          collectionName: 'oracle_knowledge_bge_m3',
-          embeddingProvider: 'ollama',
-          embeddingModel: 'bge-m3',
-        })
-      : createVectorStore();
+    const modelName = process.env.ORACLE_EMBEDDING_MODEL
+      || (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+    const preset = getEmbeddingModels()[modelName];
+    this.vectorStore = createVectorStore({
+      ...(vectorType === 'lancedb' && {
+        type: 'lancedb' as const,
+        embeddingProvider: preset?.provider || 'ollama',
+        embeddingModel: preset?.model || 'bge-m3',
+        dataPath: preset?.dataPath,
+      }),
+      collectionName: preset?.collection || COLLECTION_NAME,
+    });
 
     const { sqlite, db } = createDatabase(DB_PATH);
     this.sqlite = sqlite;
