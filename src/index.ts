@@ -391,10 +391,17 @@ class OracleMCPServer {
     // env logic instead of being overridden by a hardcoded config.
     // Collection name is resolved from the model registry (getEmbeddingModels())
     // instead of a hardcoded/provider-ternary name, so any preset works here.
+    // ORACLE_EMBEDDING_MODEL is only treated as a preset key (e.g. 'bge-m3',
+    // 'umbra') if it actually names one — existing installs set it to a raw
+    // provider model id (e.g. 'gemini-embedding-2'), which isn't a preset key
+    // and must fall through to the provider-based default instead.
     const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
-    const modelName = process.env.ORACLE_EMBEDDING_MODEL
-      || (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
-    const preset = getEmbeddingModels()[modelName];
+    const models = getEmbeddingModels();
+    const envModel = process.env.ORACLE_EMBEDDING_MODEL;
+    const modelName = (envModel && models[envModel])
+      ? envModel
+      : (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+    const preset = models[modelName];
     this.vectorStore = createVectorStore({
       ...(vectorType === 'lancedb' && {
         type: 'lancedb' as const,

@@ -135,12 +135,18 @@ export class OracleIndexer {
     // (null) to avoid regressing existing installs that don't have a store.
     // Collection name is resolved from the model registry (getEmbeddingModels())
     // rather than hardcoded per-provider, so any preset (bge-m3, umbra, etc.)
-    // writes to its own collection automatically.
+    // writes to its own collection automatically. ORACLE_EMBEDDING_MODEL is
+    // only treated as a preset key if it actually names one — existing
+    // installs set it to a raw provider model id (e.g. 'gemini-embedding-2'),
+    // which must fall through to the provider-based default instead.
     const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
-    const modelName = process.env.ORACLE_EMBEDDING_MODEL
-      || (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+    const models = getEmbeddingModels();
+    const envModel = process.env.ORACLE_EMBEDDING_MODEL;
+    const modelName = (envModel && models[envModel])
+      ? envModel
+      : (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
     if (vectorType === 'chroma' || vectorType === 'sqlite-vec') {
-      const preset = getEmbeddingModels()[modelName];
+      const preset = models[modelName];
       const collectionName = preset?.collection || COLLECTION_NAME;
       this.vectorClient = createVectorStore({ collectionName });
       await this.vectorClient.connect();
