@@ -46,6 +46,11 @@ export const FEED_LOG = path.join(ORACLE_DATA_DIR, C.FEED_LOG_FILE);
 export const PLUGINS_DIR = path.join(ORACLE_DATA_DIR, C.PLUGINS_DIR_NAME);
 export const SCHEDULE_PATH = path.join(ORACLE_DATA_DIR, C.SCHEDULE_FILE);
 export const VECTORS_DB_PATH = path.join(ORACLE_DATA_DIR, C.VECTORS_DB_FILE);
+// Isolated oracle.db+vectors.db pair for the bge-m3 preset, so its incremental
+// reindex cron scopes naturally (nothing else writes into this pair) instead
+// of needing sourceInclude/exclude filtering over the shared multi-project DB.
+// Defaults to the shared VECTORS_DB_PATH when unset (e.g. on Mac, unchanged).
+export const BGEM3_VECTORS_DB_PATH = process.env.ORACLE_BGEM3_VECTOR_DB_PATH || VECTORS_DB_PATH;
 export const LANCEDB_DIR = path.join(ORACLE_DATA_DIR, C.LANCEDB_DIR_NAME);
 export const CHROMADB_DIR = path.join(HOME_DIR, C.CHROMADB_DIR_NAME);
 

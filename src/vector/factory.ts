@@ -6,7 +6,7 @@
  */
 
 import path from 'path';
-import { VECTORS_DB_PATH, LANCEDB_DIR, CHROMADB_DIR } from '../config.ts';
+import { VECTORS_DB_PATH, BGEM3_VECTORS_DB_PATH, LANCEDB_DIR, CHROMADB_DIR } from '../config.ts';
 import { COLLECTION_NAME } from '../const.ts';
 import type { VectorStoreAdapter, VectorDBType, EmbeddingProviderType } from './types.ts';
 import { ChromaMcpAdapter } from './adapters/chroma-mcp.ts';
@@ -169,7 +169,7 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
     'bge-m3': {
       collection: 'oracle_knowledge_bge_m3',
       model: 'bge-m3',
-      dataPath: VECTORS_DB_PATH,
+      dataPath: BGEM3_VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
       provider: 'ollama',
     },
