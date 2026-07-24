@@ -39,7 +39,9 @@ const config: IndexerConfig = {
     security_corpus: process.env.ORACLE_INDEX_SECURITY_CORPUS === '1'
       ? '\u03c8/learn/security-corpus'
       : undefined,
-  }
+  },
+  // Comma-separated substrings; documents whose source_file matches any are dropped.
+  sourceExclude: process.env.ORACLE_INDEX_SOURCE_EXCLUDE || undefined,
 };
 
 const indexer = new OracleIndexer(config);

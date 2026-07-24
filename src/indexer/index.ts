@@ -75,13 +75,24 @@ export class OracleIndexer {
 
     // Collect documents from all source types
     const shared = { config: this.config, seenContentHashes: this.seenContentHashes };
-    const documents: OracleDocument[] = [
+    let documents: OracleDocument[] = [
       ...collectDocuments({ ...shared, subdir: 'resonance', parseFn: parseResonanceFile, label: 'resonance' }),
       ...collectDocuments({ ...shared, subdir: 'learnings', parseFn: parseLearningFile, label: 'learning' }),
       ...collectDocuments({ ...shared, subdir: 'retrospectives', parseFn: parseRetroFile, label: 'retrospective' }),
       ...collectDocuments({ ...shared, subdir: 'distillations', parseFn: parseDistillationFile, label: 'distillation' }),
       ...collectSecurityCorpus(shared),
     ];
+
+    // Drop documents whose source_file matches an exclude pattern (e.g. nested
+    // project psi dirs that should be indexed elsewhere, not in this shared DB).
+    const excludePatterns = (this.config.sourceExclude || '').split(',').map(p => p.trim()).filter(Boolean);
+    if (excludePatterns.length > 0) {
+      const beforeCount = documents.length;
+      documents = documents.filter(d => !excludePatterns.some(p => d.source_file.includes(p)));
+      if (documents.length !== beforeCount) {
+        console.log(`[Indexer] sourceExclude dropped ${beforeCount - documents.length} documents`);
+      }
+    }
 
     // Safety: if we found zero source documents but the DB has existing
     // indexer-created content, abort rather than smart-deleting everything.
