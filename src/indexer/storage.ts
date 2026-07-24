@@ -9,6 +9,12 @@ import { oracleDocuments } from '../db/schema.ts';
 import type { VectorStoreAdapter } from '../vector/types.ts';
 import type { OracleDocument } from '../types.ts';
 
+// Must match index-incremental.ts's hash() exactly — that script diffs
+// against this value to decide which docs are already current. A full
+// reindex that skips writing content_hash makes every doc look "changed"
+// to the incremental indexer, even ones that just got embedded seconds ago.
+const hash = (s: string) => Bun.hash(s).toString(36);
+
 /**
  * Store documents in SQLite + vector store
  * Uses Drizzle for type-safe inserts and sets createdBy: 'indexer'
@@ -86,7 +92,8 @@ export async function storeDocuments(
       metadatas.push({
         type: doc.type,
         source_file: doc.source_file,
-        concepts: doc.concepts.join(',')
+        concepts: doc.concepts.join(','),
+        content_hash: hash(doc.content)
       });
     }
     sqlite.exec('COMMIT');
