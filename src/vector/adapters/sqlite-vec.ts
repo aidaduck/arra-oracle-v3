@@ -149,20 +149,43 @@ export class SqliteVecAdapter implements VectorStoreAdapter {
       VALUES (?, ?)
     `);
 
-    this.db.exec('BEGIN');
-    try {
-      for (let i = 0; i < docs.length; i++) {
+    // The _vec table is a vec0 virtual table (sqlite-vec extension); unlike a
+    // normal table, its xUpdate doesn't honor "OR REPLACE" conflict
+    // resolution — re-embedding a doc whose id already exists throws a plain
+    // UNIQUE-constraint error instead of replacing the row. Per-row isolation
+    // (rather than one BEGIN/COMMIT for the whole batch) means that one
+    // needs-a-replace doc doesn't roll back every other doc in the same
+    // batch; explicit delete-then-insert works around vec0's missing REPLACE
+    // support for the row that actually needs it.
+    const deleteVec = this.db.prepare(`DELETE FROM ${this.collectionName}_vec WHERE id = ?`);
+    let added = 0;
+    const failures: string[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      this.db.exec('BEGIN');
+      try {
         insertMeta.run(docs[i].id, docs[i].document, JSON.stringify(docs[i].metadata));
-        // sqlite-vec expects embedding as Float32Array binary blob
-        insertVec.run(docs[i].id, toBlob(embeddings[i]));
+        try {
+          // sqlite-vec expects embedding as Float32Array binary blob
+          insertVec.run(docs[i].id, toBlob(embeddings[i]));
+        } catch {
+          // Row already exists and vec0 rejected the replace — delete + retry.
+          deleteVec.run(docs[i].id);
+          insertVec.run(docs[i].id, toBlob(embeddings[i]));
+        }
+        this.db.exec('COMMIT');
+        added++;
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        failures.push(docs[i].id);
       }
-      this.db.exec('COMMIT');
-    } catch (e) {
-      this.db.exec('ROLLBACK');
-      throw e;
     }
 
-    console.log(`[sqlite-vec] Added ${docs.length} documents`);
+    if (failures.length > 0) {
+      console.warn(`[sqlite-vec] ${failures.length}/${docs.length} rows failed: ${failures.join(', ')}`);
+    }
+    if (added === 0) throw new Error(`[sqlite-vec] All ${docs.length} rows in batch failed`);
+
+    console.log(`[sqlite-vec] Added ${added}/${docs.length} documents`);
   }
 
   async query(text: string, limit: number = 10, where?: Record<string, any>): Promise<VectorQueryResult> {
