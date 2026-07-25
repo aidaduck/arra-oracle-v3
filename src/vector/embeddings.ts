@@ -188,9 +188,12 @@ export class GeminiEmbeddings implements EmbeddingProvider {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:embedContent?key=${this.apiKey}`;
 
       let response: Response;
-      // Free tier caps embedContent at ~100 req/min. On 429 RESOURCE_EXHAUSTED
-      // the API tells us when to retry ("retry in Xs") — honor it and self-pace
-      // instead of failing the batch. Bounded retries to avoid hanging forever.
+      // Free tier caps embedContent at ~100 req/min + 1000 req/day.
+      // On 429 the API tells us when to retry ("retry in Xs") — honor it and
+      // self-pace instead of failing the batch. BUT: distinguish between
+      // *rate-limit* (transient ~60s, retry helps) and *daily quota exhaustion*
+      // (retry same key = waste 6 × 60s). When @type is QuotaFailure, throw
+      // immediately so the outer key-rotation loop gets control right away.
       for (let attempt = 0; ; attempt++) {
         response = await fetch(url, {
           method: 'POST',
@@ -202,6 +205,18 @@ export class GeminiEmbeddings implements EmbeddingProvider {
         });
         if (response.status !== 429 || attempt >= 6) break;
         const body = await response.text();
+        let isQuotaExhaustion = false;
+        try {
+          const err = JSON.parse(body);
+          const details: unknown = err?.error?.details;
+          isQuotaExhaustion = Array.isArray(details) &&
+            (details as Array<Record<string, unknown>>).some(d =>
+              (d as Record<string, unknown>)?.['@type']?.includes('QuotaFailure')
+            );
+        } catch {}
+        if (isQuotaExhaustion) {
+          throw new Error(`Gemini API error: ${body}`);
+        }
         const m = body.match(/retry in ([\d.]+)s/i);
         const waitMs = Math.ceil((m ? parseFloat(m[1]) : 30) * 1000) + 1000;
         await sleep(waitMs);
