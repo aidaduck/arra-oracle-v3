@@ -11,7 +11,11 @@
  * Usage:
  *   bun src/scripts/index-incremental.ts gemini
  *   ORACLE_EMBED_BATCH=20 ORACLE_EMBED_SLEEP_MS=1500 bun src/scripts/index-incremental.ts gemini
+ *
+ * NOTE: import '../sqlite-init.ts' MUST be the first import (ESM depth-first eval).
  */
+
+import '../sqlite-init.ts';
 
 import { Database } from 'bun:sqlite';
 import { createVectorStore, getEmbeddingModels } from '../vector/factory.ts';

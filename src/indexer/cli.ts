@@ -1,7 +1,11 @@
 /**
  * CLI entrypoint for running the Oracle indexer
+ *
+ * NOTE: import '../sqlite-init.ts' MUST be the first import — it registers
+ * custom sqlite before any Database can be opened (ESM depth-first eval).
  */
 
+import '../sqlite-init.ts';
 import fs from 'fs';
 import path from 'path';
 import { DB_PATH, CHROMADB_DIR } from '../config.ts';
