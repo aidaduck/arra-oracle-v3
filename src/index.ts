@@ -364,8 +364,14 @@ class OracleMCPServer {
       this.embeddedReady = this.initEmbedded();
     }
     await this.embeddedReady;
-    if (!this.sqlite || !this.db || !this.vectorStore) {
+    if (!this.vectorStore) {
       throw new Error('Embedded Oracle resources failed to initialize');
+    }
+    if (!this.sqlite || !this.db) {
+      await this.openMainDb();
+      if (!this.sqlite || !this.db) {
+        throw new Error('Embedded Oracle resources failed to initialize');
+      }
     }
     return {
       db: this.db,
@@ -412,10 +418,26 @@ class OracleMCPServer {
       collectionName: preset?.collection || COLLECTION_NAME,
     });
 
+    await this.verifyVectorHealth();
+  }
+
+  /**
+   * Open the main oracle.db after the vector client has connected.
+   *
+   * Database.setCustomSQLite() is process-wide and the FIRST new Database()
+   * call wins. The vector client (sqlite-vec adapter) calls setCustomSQLite()
+   * in its connect(); if we open oracle.db before that, the default/bundled
+   * sqlite is locked in and extension loading (vec0.dylib) silently fails on
+   * platforms whose default sqlite disallows it (e.g. macOS/Homebrew).
+   * Opening the main DB here — explicitly after connect() — preserves the
+   * same ordering discipline index-incremental.ts documents.
+   */
+  private async openMainDb(): Promise<void> {
+    if (this.sqlite && this.db) return;
+    const { createDatabase } = await import('./db/index.ts');
     const { sqlite, db } = createDatabase(DB_PATH);
     this.sqlite = sqlite;
     this.db = db;
-    await this.verifyVectorHealth();
   }
 
   private async verifyVectorHealth(): Promise<void> {
@@ -659,9 +681,13 @@ class OracleMCPServer {
       console.error('[Startup] Skipping vector pre-connect in HTTP-client mode');
       return;
     }
-    await this.getToolCtx();
+    if (!this.embeddedReady) {
+      this.embeddedReady = this.initEmbedded();
+    }
+    await this.embeddedReady;
     if (!this.vectorStore) return;
     await this.vectorStore.connect();
+    await this.openMainDb();
   }
 
   async run(): Promise<void> {
