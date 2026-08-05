@@ -92,8 +92,7 @@ export class OracleIndexer {
     }
 
     // Main DB opens only after connect(), so setCustomSQLite is in effect.
-    this.openMainDb();
-
+    await this.openMainDb();
     setIndexingStatus(this.sqlite, this.config, true, 0, 100);
     backupDatabase(this.sqlite, this.config);
 
