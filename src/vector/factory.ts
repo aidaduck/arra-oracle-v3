@@ -201,11 +201,11 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
     // folder (Signals/knowledge-core) that lives outside the indexer.
     'lyz-lab-folder': {
       collection: 'oracle_knowledge_lyzlab',
-      model: 'gemini-embedding-2',
+      model: process.env.ORACLE_EMBEDDING_MODEL || 'bge-m3-lowctx',
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
-      provider: 'gemini',
-      sourceDir: '~/Desktop/LYz-Lab',
+      provider: process.env.ORACLE_EMBEDDING_PROVIDER || 'ollama',
+      sourceDir: process.env.LYZ_LAB_HOME || '~/Desktop/LYz-Lab',
     },
   };
 }
