@@ -31,8 +31,8 @@ import { COLLECTION_NAME } from '../const.ts';
 import type { VectorStoreAdapter } from '../vector/types.ts';
 
 export class OracleIndexer {
-  private sqlite: Database;
-  private db: BunSQLiteDatabase<typeof schema>;
+  private sqlite!: Database;
+  private db!: BunSQLiteDatabase<typeof schema>;
   private config: IndexerConfig;
   private project: string | null;
   private seenContentHashes: Set<string> = new Set();
@@ -40,11 +40,26 @@ export class OracleIndexer {
 
   constructor(config: IndexerConfig) {
     this.config = config;
-    const { sqlite, db } = createDatabase(config.dbPath);
-    this.sqlite = sqlite;
-    this.db = db;
     this.project = detectProject(config.repoRoot);
     console.log(`[Indexer] Detected project: ${this.project || '(universal)'}`);
+  }
+
+  /**
+   * Open oracle.db after the vector client has connected.
+   *
+   * Database.setCustomSQLite() is process-wide and the FIRST new Database()
+   * call wins. The vector client (sqlite-vec adapter) calls setCustomSQLite()
+   * in its connect(); if we open oracle.db before that, the bundled/default
+   * sqlite is locked in and extension loading (vec0.dylib) silently fails on
+   * platforms whose default sqlite disallows it (e.g. macOS/Homebrew).
+   * Opened here — explicitly after connect() — matching the ordering that
+   * index-incremental.ts documents and src/index.ts's openMainDb().
+   */
+  private openMainDb(): void {
+    if (this.sqlite && this.db) return;
+    const { sqlite, db } = createDatabase(this.config.dbPath);
+    this.sqlite = sqlite;
+    this.db = db;
   }
 
   /**
@@ -53,6 +68,31 @@ export class OracleIndexer {
   async index(): Promise<void> {
     console.log('Starting Oracle indexing...');
     this.seenContentHashes.clear();
+
+    // Connect vector store FIRST. setCustomSQLite is process-wide and the
+    // first new Database() call wins, so opening oracle.db (in the constructor
+    // or before this point) would lock in the bundled sqlite and break
+    // vec0.dylib extension loading on macOS. Mirrors the ordering discipline
+    // in index-incremental.ts and src/index.ts's openMainDb().
+    const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
+    const models = getEmbeddingModels();
+    const envModel = process.env.ORACLE_EMBEDDING_MODEL;
+    const modelName = (envModel && models[envModel])
+      ? envModel
+      : (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+    if (vectorType === 'chroma' || vectorType === 'sqlite-vec') {
+      const preset = models[modelName];
+      const collectionName = preset?.collection || COLLECTION_NAME;
+      this.vectorClient = createVectorStore({ collectionName });
+      await this.vectorClient.connect();
+      await this.vectorClient.ensureCollection();
+      console.log(`[Indexer] Vector client: ${this.vectorClient.name} → ${collectionName}`);
+    } else {
+      this.vectorClient = null;
+    }
+
+    // Main DB opens only after connect(), so setCustomSQLite is in effect.
+    this.openMainDb();
 
     setIndexingStatus(this.sqlite, this.config, true, 0, 100);
     backupDatabase(this.sqlite, this.config);
@@ -142,31 +182,6 @@ export class OracleIndexer {
       }
     }
 
-    // Connect vector store for supported backends. Default stays SQLite-only
-    // (null) to avoid regressing existing installs that don't have a store.
-    // Collection name is resolved from the model registry (getEmbeddingModels())
-    // rather than hardcoded per-provider, so any preset (bge-m3, umbra, etc.)
-    // writes to its own collection automatically. ORACLE_EMBEDDING_MODEL is
-    // only treated as a preset key if it actually names one — existing
-    // installs set it to a raw provider model id (e.g. 'gemini-embedding-2'),
-    // which must fall through to the provider-based default instead.
-    const vectorType = process.env.ORACLE_VECTOR_DB || 'lancedb';
-    const models = getEmbeddingModels();
-    const envModel = process.env.ORACLE_EMBEDDING_MODEL;
-    const modelName = (envModel && models[envModel])
-      ? envModel
-      : (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
-    if (vectorType === 'chroma' || vectorType === 'sqlite-vec') {
-      const preset = models[modelName];
-      const collectionName = preset?.collection || COLLECTION_NAME;
-      this.vectorClient = createVectorStore({ collectionName });
-      await this.vectorClient.connect();
-      await this.vectorClient.ensureCollection();
-      console.log(`[Indexer] Vector client: ${this.vectorClient.name} → ${collectionName}`);
-    } else {
-      this.vectorClient = null;
-    }
-
     try {
       await storeDocuments(this.sqlite, this.db, this.vectorClient, this.project, documents);
     } finally {
@@ -183,6 +198,6 @@ export class OracleIndexer {
 
   /** Close database connections */
   async close(): Promise<void> {
-    this.sqlite.close();
+    this.sqlite?.close();
   }
 }
