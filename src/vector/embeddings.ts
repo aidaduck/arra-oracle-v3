@@ -212,7 +212,7 @@ export class GeminiEmbeddings implements EmbeddingProvider {
           const details: unknown = err?.error?.details;
           isQuotaExhaustion = Array.isArray(details) &&
             (details as Array<Record<string, unknown>>).some(d =>
-              (d as Record<string, unknown>)?.['@type']?.includes('QuotaFailure')
+              ((d as Record<string, unknown>)?.['@type'] as string | undefined)?.includes('QuotaFailure')
             );
         } catch {}
         if (isQuotaExhaustion) {
