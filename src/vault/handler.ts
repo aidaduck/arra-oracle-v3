@@ -3,18 +3,12 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import { getSetting, setSetting } from '../db/index.ts';
 import { detectProject } from '../server/project-detect.ts';
 import { ORACLE_DATA_DIR } from '../config.ts';
 import { walkFiles, resolveVaultPath, cleanEmptyDirs } from './discovery.ts';
 import { mapToVaultPath, ensureFrontmatterProject, isProjectCategory, UNIVERSAL_CATEGORIES } from './path-mapping.ts';
 import { parseGitStatus } from './git.ts';
-
-// Lazy db accessor — avoids module-load side-effect of db/index.ts (new Database() at module scope)
-let _dbCache: any = null;
-function _db(): any {
-  if (!_dbCache) _dbCache = require('../db/index.ts');
-  return _dbCache;
-}
 
 // Re-export sub-modules for backward compatibility
 export { mapToVaultPath, mapFromVaultPath, ensureFrontmatterProject } from './path-mapping.ts';
@@ -33,8 +27,8 @@ export function initVault(repo: string): InitResult {
     created = true;
   }
   const vaultPath = resolveVaultPath(repo);
-  _db().setSetting('vault_repo', repo);
-  _db().setSetting('vault_enabled', 'true');
+  setSetting('vault_repo', repo);
+  setSetting('vault_enabled', 'true');
 
   const psiSymlink = path.join(ORACLE_DATA_DIR, 'ψ');
   const vaultPsiDir = path.join(vaultPath, 'ψ');
@@ -55,7 +49,7 @@ export interface SyncResult {
 
 export function syncVault(opts: { dryRun?: boolean; repoRoot: string }): SyncResult {
   const { dryRun = false, repoRoot } = opts;
-const repo = _db().getSetting('vault_repo');
+  const repo = getSetting('vault_repo');
   if (!repo) throw new Error('Vault not initialized. Run vault:init first.');
 
   const vaultPath = resolveVaultPath(repo);
@@ -115,7 +109,7 @@ const repo = _db().getSetting('vault_repo');
   execSync(`git commit -m "vault sync: ${ts}${summary}${projectTag}"`, { cwd: vaultPath, stdio: 'pipe' });
   const commitHash = execSync('git rev-parse --short HEAD', { cwd: vaultPath, encoding: 'utf-8' }).trim();
   execSync('git push', { cwd: vaultPath, stdio: 'pipe' });
-  _db().setSetting('vault_last_sync', String(now.getTime()));
+  setSetting('vault_last_sync', String(now.getTime()));
 
   console.error(`[Vault] Synced: +${added} ~${modified} -${deleted} (${commitHash})`);
   return { dryRun: false, added, modified, deleted, commitHash, project };
@@ -125,7 +119,7 @@ export interface PullResult { files: number; project: string }
 
 export function pullVault(opts: { repoRoot: string }): PullResult {
   const { repoRoot } = opts;
-  const repo = _db().getSetting('vault_repo');
+  const repo = getSetting('vault_repo');
   if (!repo) throw new Error('Vault not initialized. Run vault:init first.');
 
   const vaultPath = resolveVaultPath(repo);
@@ -167,9 +161,9 @@ export interface VaultStatusResult {
 }
 
 export function vaultStatus(repoRoot: string): VaultStatusResult {
-  const repo = _db().getSetting('vault_repo');
-  const enabled = _db().getSetting('vault_enabled') === 'true';
-  const lastSyncMs = _db().getSetting('vault_last_sync');
+  const repo = getSetting('vault_repo');
+  const enabled = getSetting('vault_enabled') === 'true';
+  const lastSyncMs = getSetting('vault_last_sync');
   if (!repo || !enabled) return { enabled: false, repo: null, lastSync: null, vaultPath: null };
 
   let vaultPath: string | null = null;

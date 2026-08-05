@@ -120,29 +120,40 @@ export function createDatabase(dbPath?: string): {
 }
 
 // ============================================================================
-// Default module-level connection (used by server.ts, handlers, etc.)
+// Lazy default connection (opened on first property access, not at module load)
 // ============================================================================
 
-// Ensure data dir exists before opening DB
-if (!fs.existsSync(ORACLE_DATA_DIR)) {
-  fs.mkdirSync(ORACLE_DATA_DIR, { recursive: true });
+let defaultStorage: { sqlite: Database; db: BunSQLiteDatabase<typeof schema> } | null = null;
+
+function openDefaultStorage(): { sqlite: Database; db: BunSQLiteDatabase<typeof schema> } {
+  if (!defaultStorage) {
+    if (!fs.existsSync(ORACLE_DATA_DIR)) {
+      fs.mkdirSync(ORACLE_DATA_DIR, { recursive: true });
+    }
+    defaultStorage = createDatabase(DB_PATH);
+  }
+  return defaultStorage;
 }
 
-const isReadonly = process.env.ORACLE_VECTOR_READONLY === '1';
-const defaultSqlite = isReadonly
-  ? new Database(DB_PATH, { readonly: true })
-  : new Database(DB_PATH);
-const defaultDb = drizzle(defaultSqlite, { schema });
-
-if (isReadonly) {
-  console.log('[DB] Opened in READONLY mode (vector sidecar)');
-} else {
-  // Run initialization on the default connection (skipped in readonly mode)
-  initializeDatabase(defaultSqlite, defaultDb);
+function lazyProxy<T extends object>(resolve: () => T): T {
+  return new Proxy({} as T, {
+    get(_target, prop) {
+      const target = resolve() as Record<PropertyKey, unknown>;
+      const value = target[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set(_target, prop, value) {
+      (resolve() as Record<PropertyKey, unknown>)[prop] = value;
+      return true;
+    },
+    has(_target, prop) {
+      return prop in resolve();
+    },
+  });
 }
 
-export const sqlite = defaultSqlite;
-export const db = defaultDb;
+export const sqlite = lazyProxy<Database>(() => openDefaultStorage().sqlite);
+export const db = lazyProxy<BunSQLiteDatabase<typeof schema>>(() => openDefaultStorage().db);
 
 // Export schema for use in queries
 export * from './schema.ts';
@@ -151,7 +162,8 @@ export * from './schema.ts';
  * Close database connection
  */
 export function closeDb() {
-  defaultSqlite.close();
+  defaultStorage?.sqlite.close();
+  defaultStorage = null;
 }
 
 // ============================================================================
