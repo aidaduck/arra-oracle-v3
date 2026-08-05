@@ -5,7 +5,6 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import { getSetting } from '../db/index.ts';
 
 /**
  * Walk all files under dir, skipping symlinks.
@@ -55,7 +54,7 @@ export function cleanEmptyDirs(dir: string, stopAt: string): void {
  * Returns the vault repo local path, or a setup hint if not configured.
  */
 export function getVaultPsiRoot(): { path: string } | { needsInit: true; hint: string } {
-  const repo = getSetting('vault_repo');
+  const repo = require('../db/index.ts').getSetting('vault_repo');
   if (!repo) {
     return {
       needsInit: true,
