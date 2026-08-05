@@ -204,7 +204,7 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
       model: process.env.ORACLE_EMBEDDING_MODEL || 'bge-m3-lowctx',
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
-      provider: process.env.ORACLE_EMBEDDING_PROVIDER || 'ollama',
+      provider: (process.env.ORACLE_EMBEDDING_PROVIDER as EmbeddingProviderType) || 'ollama',
       sourceDir: process.env.LYZ_LAB_HOME || '~/Desktop/LYz-Lab',
     },
   };

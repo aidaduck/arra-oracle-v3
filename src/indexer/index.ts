@@ -17,7 +17,6 @@ import { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { eq, or, isNull, inArray } from 'drizzle-orm';
 import * as schema from '../db/schema.ts';
 import { oracleDocuments } from '../db/schema.ts';
-import { createDatabase } from '../db/index.ts';
 import { detectProject } from '../server/project-detect.ts';
 import type { OracleDocument, IndexerConfig } from '../types.ts';
 
@@ -55,8 +54,9 @@ export class OracleIndexer {
    * Opened here — explicitly after connect() — matching the ordering that
    * index-incremental.ts documents and src/index.ts's openMainDb().
    */
-  private openMainDb(): void {
+  private async openMainDb(): Promise<void> {
     if (this.sqlite && this.db) return;
+    const { createDatabase } = await import('../db/index.ts');
     const { sqlite, db } = createDatabase(this.config.dbPath);
     this.sqlite = sqlite;
     this.db = db;

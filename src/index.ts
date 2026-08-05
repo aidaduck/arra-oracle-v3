@@ -386,9 +386,8 @@ class OracleMCPServer {
   private async initEmbedded(): Promise<void> {
     if (this.sqlite && this.db && this.vectorStore) return;
 
-    const [{ createVectorStore, getEmbeddingModels }, { createDatabase }] = await Promise.all([
+    const [{ createVectorStore, getEmbeddingModels }] = await Promise.all([
       import('./vector/factory.ts'),
-      import('./db/index.ts'),
     ]);
 
     // Let ORACLE_VECTOR_DB choose the backend. Default stays 'lancedb' so
