@@ -129,6 +129,26 @@ export class SqliteVecAdapter implements VectorStoreAdapter {
     }
   }
 
+  async getContentHashes(): Promise<Map<string, string>> {
+    const hashes = new Map<string, string>();
+    if (!this.db) return hashes;
+    try {
+      const rows = this.db.query(
+        `SELECT id, metadata FROM ${this.collectionName}_meta`
+      ).all() as Array<{ id: string; metadata: string }>;
+      for (const r of rows) {
+        try {
+          hashes.set(r.id, JSON.parse(r.metadata).content_hash || '');
+        } catch {
+          hashes.set(r.id, '');
+        }
+      }
+    } catch {
+      // Table may not exist yet on a fresh collection — treat as no known hashes.
+    }
+    return hashes;
+  }
+
   async addDocuments(docs: VectorDocument[]): Promise<void> {
     if (docs.length === 0) return;
     if (!this.db) throw new Error('sqlite-vec not connected');

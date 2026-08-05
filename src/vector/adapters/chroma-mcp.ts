@@ -55,4 +55,14 @@ export class ChromaMcpAdapter implements VectorStoreAdapter {
   async getAllEmbeddings(limit?: number): Promise<{ ids: string[]; embeddings: number[][]; metadatas: any[] }> {
     return await this.client.getAllEmbeddings(limit);
   }
+
+  async getContentHashes(): Promise<Map<string, string>> {
+    const hashes = new Map<string, string>();
+    const all = await this.client.getAllEmbeddings(100000);
+    for (let i = 0; i < all.ids.length; i++) {
+      const meta = all.metadatas[i] || {};
+      hashes.set(all.ids[i], meta.content_hash || '');
+    }
+    return hashes;
+  }
 }

@@ -108,13 +108,37 @@ export async function storeDocuments(
     return;
   }
 
+  // Incremental skip (2026-08-05, Myst — cli.ts reindex pass): SQLite/FTS is
+  // always refreshed above (cheap, keeps keyword search fresh). The expensive
+  // part is the vector-embed call, so before batching we read back the
+  // content_hash the adapter already stores for each doc and drop any doc
+  // whose hash matches — mirroring index-incremental.ts's diff. Adapters that
+  // don't expose getContentHashes() fall back to embedding everything (old
+  // behavior, no regression).
+  let toEmbed = ids;
+  let toEmbedContents = contents;
+  let toEmbedMetadatas = metadatas;
+  if (typeof vectorClient.getContentHashes === 'function') {
+    const existingHashes = await vectorClient.getContentHashes();
+    const keep: number[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      if (existingHashes.get(ids[i]) !== metadatas[i].content_hash) keep.push(i);
+    }
+    if (keep.length < ids.length) {
+      toEmbed = keep.map(i => ids[i]);
+      toEmbedContents = keep.map(i => contents[i]);
+      toEmbedMetadatas = keep.map(i => metadatas[i]);
+      console.log(`[Incremental] ${ids.length - keep.length}/${ids.length} docs unchanged — skipped vector embed`);
+    }
+  }
+
   const BATCH_SIZE = 100;
   let vectorSuccess = true;
 
-  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-    const batchIds = ids.slice(i, i + BATCH_SIZE);
-    const batchContents = contents.slice(i, i + BATCH_SIZE);
-    const batchMetadatas = metadatas.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < toEmbed.length; i += BATCH_SIZE) {
+    const batchIds = toEmbed.slice(i, i + BATCH_SIZE);
+    const batchContents = toEmbedContents.slice(i, i + BATCH_SIZE);
+    const batchMetadatas = toEmbedMetadatas.slice(i, i + BATCH_SIZE);
 
     try {
       const vectorDocs = batchIds.map((id, idx) => ({
@@ -123,12 +147,12 @@ export async function storeDocuments(
         metadata: batchMetadatas[idx]
       }));
       await vectorClient.addDocuments(vectorDocs);
-      console.log(`Vector batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(ids.length / BATCH_SIZE)} stored`);
+      console.log(`Vector batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(toEmbed.length / BATCH_SIZE)} stored`);
     } catch (error) {
       console.error(`Vector batch failed:`, error);
       vectorSuccess = false;
     }
   }
 
-  console.log(`Stored in SQLite${vectorSuccess ? ` + ${vectorClient.name}` : ` (${vectorClient.name} failed)`}`);
+  console.log(`Stored in SQLite${vectorSuccess ? ` + ${vectorClient.name}` : ` (${vectorClient.name} failed)`}${toEmbed.length < ids.length ? ` (${ids.length - toEmbed.length} unchanged skipped)` : ''}`);
 }

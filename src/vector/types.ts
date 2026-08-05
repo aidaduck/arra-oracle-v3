@@ -45,6 +45,12 @@ export interface VectorStoreAdapter {
   getStats(): Promise<{ count: number }>;
   getCollectionInfo(): Promise<{ count: number; name: string }>;
   getAllEmbeddings?(limit?: number): Promise<{ ids: string[]; embeddings: number[][]; metadatas: any[] }>;
+  /**
+   * Optional: return map of id → content_hash for all currently stored docs.
+   * Used by the incremental reindex path to skip re-embedding unchanged docs.
+   * Fallback (method absent) = storeDocuments embeds everything (old behavior).
+   */
+  getContentHashes?(): Promise<Map<string, string>>;
 }
 
 export type EmbedType = 'query' | 'passage';
