@@ -200,6 +200,10 @@ export async function vectorSearch(
 }
 
 /**
+ * Merge vector results from two collections that use the same embedder
+ * (e.g. bge_m3 + umbra, both bge-m3-lowctx 1024-dim) so distances are
+ * directly comparable. Dedups by doc id keeping the lower distance.
+ /**
  * Combine FTS and vector search results.
  * Deduplicates by document id, calculates hybrid score with 10% boost.
  */

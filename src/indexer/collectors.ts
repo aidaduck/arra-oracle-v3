@@ -154,3 +154,47 @@ export function collectSecurityCorpus(opts: {
   console.log(`Indexed ${documents.length} security-corpus documents from ${files.length} files (skipped ${skippedDupes} duplicates)`);
   return documents;
 }
+
+/**
+ * Collect fleet-shared brain/ documents (umbra-vault root, NOT under any ψ/).
+ *
+ * Mirrors collectDocuments()'s shape but walks ${repoRoot}/brain directly —
+ * no ψ/memory/ prefix, no symlink trick. Documents are tagged:
+ *   - source_file: "brain/..." (relative from repoRoot)
+ *   - project: null (universal — fleet-shared, not any one oracle's)
+ *
+ * OPT-IN: only runs when config.sourcePaths.brain is set (ORACLE_INDEX_BRAIN=1).
+ */
+export function collectBrain(opts: {
+  config: IndexerConfig;
+  seenContentHashes: Set<string>;
+}): OracleDocument[] {
+  const { config, seenContentHashes } = opts;
+  const documents: OracleDocument[] = [];
+
+  const brainSubPath = config.sourcePaths.brain;
+  if (!brainSubPath) return documents;
+
+  const brainRoot = path.join(config.repoRoot, brainSubPath);
+  if (!fs.existsSync(brainRoot)) {
+    console.log(`Skipping brain: ${brainRoot} not found`);
+    return documents;
+  }
+
+  const files = getAllMarkdownFiles(brainRoot);
+  let skippedDupes = 0;
+  for (const filePath of files) {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    if (!content.trim()) continue;
+    const contentHash = Bun.hash(content).toString(36);
+    if (seenContentHashes.has(contentHash)) { skippedDupes++; continue; }
+    seenContentHashes.add(contentHash);
+    const relPath = path.relative(config.repoRoot, filePath);
+    const parsed = parseLearningFile(relPath, content, relPath);
+    for (const doc of parsed) doc.project = null;
+    documents.push(...parsed);
+  }
+
+  console.log(`Indexed ${documents.length} brain documents from ${files.length} files (skipped ${skippedDupes} duplicates)`);
+  return documents;
+}

@@ -173,28 +173,45 @@ export function getEmbeddingModels(): Record<string, EmbeddingModelPreset> {
       adapter: 'sqlite-vec',
       provider: 'ollama',
     },
-    // Cloud embedder for hosts where local Ollama isn't available (e.g. older
-    // macOS). sqlite-vec backend avoids lancedb native-binding / chroma uvx
-    // issues. Needs GEMINI_API_KEY + a system SQLite that allows extension
-    // loading (auto-probed via ORACLE_SQLITE_LIB / Homebrew).
-    // Umbra = shared fleet knowledge (from the Umbra vault). MercyX is human-
-    // managed (Noctéa) and lives in its own LYz-Lab collection — excluded here.
+    // ────────────────────────────────────────────────────────────────────────────
+    // DEPRECATED since 2026-08-07 (consolidated into oracle_knowledge_bge_m3).
+    //
+    // Umbra was originally a separate collection for fleet-shared knowledge
+    // (brain/ + distilled ψ/memory/). But a routing bug (ORACLE_EMBEDDING_MODEL
+    // =bge-m3-lowctx didn't match any preset key, causing the indexer to fall
+    // back to bge-m3) meant brain/ content was silently duplicated across both
+    // collections for months. Once the preset migration to Ollama made both
+    // collections use the same embedder (bge-m3-lowctx, 1024-dim), keeping them
+    // separate was pure overhead — every search had to query 2 collections just
+    // to get the same knowledge.
+    //
+    // Decision (Jitan, 2026-08-07): merge everything into `bge_m3`. One
+    // collection, no merge-at-search, no routing confusion.
+    //
+    // The old `oracle_knowledge_umbra` tables still exist in vectors.db
+    // (Nothing is Deleted). Unique rows were migrated to bge_m3 on 2026-08-07
+    // (533 unique docs). No code path writes to or reads from this collection
+    // anymore. It's an archive — leave it alone.
+    //
+    // For full context see: ψ/memory/retrospectives/2026-08/07/
+    // ────────────────────────────────────────────────────────────────────────────
     umbra: {
       collection: 'oracle_knowledge_umbra',
-      model: 'gemini-embedding-2',
+      model: 'bge-m3-lowctx',
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
-      provider: 'gemini',
+      provider: 'ollama',
       sourceExclude: '/mercyx-oracle/',
     },
     // LYz-Lab = the workspace MercyX manages (~/Desktop/LYz-Lab). Its knowledge
     // (mercyx-oracle/ψ) gets its own collection, hands-off from the fleet.
+    // Populated by brain-reindex.sh pass-3 (Ollama bge-m3-lowctx, 1024-dim).
     'lyz-lab': {
       collection: 'oracle_knowledge_lyzlab',
-      model: 'gemini-embedding-2',
+      model: 'bge-m3-lowctx',
       dataPath: VECTORS_DB_PATH,
       adapter: 'sqlite-vec',
-      provider: 'gemini',
+      provider: 'ollama',
       sourceInclude: '/mercyx-oracle/',
     },
     // Same lyzlab collection, but sourced from the standalone LYz-Lab vault

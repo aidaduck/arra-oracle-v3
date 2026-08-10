@@ -23,7 +23,7 @@ import type { OracleDocument, IndexerConfig } from '../types.ts';
 import { setIndexingStatus } from './status.ts';
 import { backupDatabase } from './backup.ts';
 import { parseResonanceFile, parseLearningFile, parseRetroFile, parseDistillationFile } from './parser.ts';
-import { collectDocuments, collectSecurityCorpus } from './collectors.ts';
+import { collectDocuments, collectSecurityCorpus, collectBrain } from './collectors.ts';
 import { storeDocuments } from './storage.ts';
 import { createVectorStore, getEmbeddingModels } from '../vector/factory.ts';
 import { COLLECTION_NAME } from '../const.ts';
@@ -79,7 +79,7 @@ export class OracleIndexer {
     const envModel = process.env.ORACLE_EMBEDDING_MODEL;
     const modelName = (envModel && models[envModel])
       ? envModel
-      : (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+      : 'bge-m3';
     if (vectorType === 'chroma' || vectorType === 'sqlite-vec') {
       const preset = models[modelName];
       const collectionName = preset?.collection || COLLECTION_NAME;
@@ -120,6 +120,7 @@ export class OracleIndexer {
       ...collectDocuments({ ...shared, subdir: 'retrospectives', parseFn: parseRetroFile, label: 'retrospective' }),
       ...collectDocuments({ ...shared, subdir: 'distillations', parseFn: parseDistillationFile, label: 'distillation' }),
       ...collectSecurityCorpus(shared),
+      ...collectBrain(shared),
     ];
 
     // Drop documents whose source_file matches an exclude pattern (e.g. nested

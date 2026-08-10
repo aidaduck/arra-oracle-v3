@@ -248,6 +248,36 @@ export class SqliteVecAdapter implements VectorStoreAdapter {
     };
   }
 
+  async queryByVector(vector: number[], limit: number = 10, where?: Record<string, any>): Promise<VectorQueryResult> {
+    if (!this.db) throw new Error('sqlite-vec not connected');
+    const fetchLimit = where ? limit * 3 : limit;
+    const rows = this.db.prepare(`
+      SELECT v.id, v.distance, m.document, m.metadata
+      FROM ${this.collectionName}_vec v
+      JOIN ${this.collectionName}_meta m ON v.id = m.id
+      WHERE v.embedding MATCH ? AND k = ?
+      ORDER BY v.distance
+    `).all(toBlob(vector), fetchLimit) as Array<{
+      id: string;
+      distance: number;
+      document: string;
+      metadata: string;
+    }>;
+    let filtered = rows;
+    if (where) {
+      filtered = rows.filter(row => {
+        const meta = JSON.parse(row.metadata);
+        return Object.entries(where).every(([k, v]) => meta[k] === v);
+      }).slice(0, limit);
+    }
+    return {
+      ids: filtered.map(r => r.id),
+      documents: filtered.map(r => r.document),
+      distances: filtered.map(r => r.distance),
+      metadatas: filtered.map(r => JSON.parse(r.metadata)),
+    };
+  }
+
   async queryById(id: string, nResults: number = 5): Promise<VectorQueryResult> {
     if (!this.db) throw new Error('sqlite-vec not connected');
 

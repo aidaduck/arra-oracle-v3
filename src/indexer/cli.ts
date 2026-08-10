@@ -43,6 +43,7 @@ const config: IndexerConfig = {
     security_corpus: process.env.ORACLE_INDEX_SECURITY_CORPUS === '1'
       ? '\u03c8/learn/security-corpus'
       : undefined,
+    brain: process.env.ORACLE_INDEX_BRAIN === '1' ? 'brain' : undefined,
   },
   // Comma-separated substrings; documents whose source_file matches any are dropped.
   sourceExclude: process.env.ORACLE_INDEX_SOURCE_EXCLUDE || undefined,

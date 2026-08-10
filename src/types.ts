@@ -127,6 +127,7 @@ export interface IndexerConfig {
     retrospectives: string;
     distillations: string;
     security_corpus?: string;  // Optional: ψ/learn/security-corpus/ — opt-in via ORACLE_INDEX_SECURITY_CORPUS=1
+    brain?: string;            // Optional: fleet-shared brain/ (vault root, not under ψ/) — opt-in via ORACLE_INDEX_BRAIN=1
   };
   sourceExclude?: string;  // Comma-separated substrings; documents whose source_file matches any are dropped before storeDocuments()
 }

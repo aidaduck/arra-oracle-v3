@@ -405,15 +405,13 @@ class OracleMCPServer {
     const envModel = process.env.ORACLE_EMBEDDING_MODEL;
     const modelName = (envModel && models[envModel])
       ? envModel
-      : (process.env.ORACLE_EMBEDDING_PROVIDER === 'gemini' ? 'umbra' : 'bge-m3');
+      : 'bge-m3';
     const preset = models[modelName];
     this.vectorStore = createVectorStore({
-      ...(vectorType === 'lancedb' && {
-        type: 'lancedb' as const,
-        embeddingProvider: preset?.provider || 'ollama',
-        embeddingModel: preset?.model || 'bge-m3',
-        dataPath: preset?.dataPath,
-      }),
+      type: vectorType as any,
+      embeddingProvider: preset?.provider || 'ollama',
+      embeddingModel: preset?.model || 'bge-m3',
+      ...(preset?.dataPath && { dataPath: preset.dataPath }),
       collectionName: preset?.collection || COLLECTION_NAME,
     });
 
